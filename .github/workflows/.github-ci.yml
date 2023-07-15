@@ -43,5 +43,5 @@ jobs:
 
       - name: Test
         run: |
-          (cd racing && go generate ./... && go test ./...)
-          (cd api && go generate ./... && go test ./...)
+          (cd racing && go test ./...)
+          (cd api && go test ./...)
