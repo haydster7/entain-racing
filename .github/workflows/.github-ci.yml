@@ -30,14 +30,14 @@ jobs:
           version: 1.0
           
       - name: Install dependencies
-        run: |
-          (cd racing && go install ${GENERATE_DEPS})
-          (cd api && go install ${GENERATE_DEPS})
+        run:
+          - (cd racing && go install ${GENERATE_DEPS})
+          - (cd api && go install ${GENERATE_DEPS})
 
       - name: Build
-        run: |
-          (cd racing && go generate ./... && go build)
-          (cd api && go generate ./... && go build)
+        run:
+          - (cd racing && go generate ./... && go build)
+          - (cd api && go generate ./... && go build)
 
       #- name: Test
       #  run: go test -v ./...
