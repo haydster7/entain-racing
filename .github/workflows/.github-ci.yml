@@ -29,6 +29,7 @@ jobs:
         
     - name: Install dependencies
       run: |
+        brew install protobuf
         (cd racing && go install ${GENERATE_DEPS})
         (cd api && go install ${GENERATE_DEPS})
 
