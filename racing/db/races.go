@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -18,7 +19,7 @@ type RacesRepo interface {
 	Init() error
 
 	// List will return a list of races.
-	List(filter *racing.ListRacesRequestFilter) ([]*racing.Race, error)
+	List(filter *racing.ListRacesRequestFilter, order_by string) ([]*racing.Race, error)
 }
 
 type racesRepo struct {
@@ -43,7 +44,7 @@ func (r *racesRepo) Init() error {
 	return err
 }
 
-func (r *racesRepo) List(filter *racing.ListRacesRequestFilter) ([]*racing.Race, error) {
+func (r *racesRepo) List(filter *racing.ListRacesRequestFilter, order_by string) ([]*racing.Race, error) {
 	var (
 		err   error
 		query string
@@ -53,6 +54,8 @@ func (r *racesRepo) List(filter *racing.ListRacesRequestFilter) ([]*racing.Race,
 	query = getRaceQueries()[racesList]
 
 	query, args = r.applyFilter(query, filter)
+
+	query = r.applySort(query, order_by)
 
 	rows, err := r.db.Query(query, args...)
 	if err != nil {
@@ -91,6 +94,51 @@ func (r *racesRepo) applyFilter(query string, filter *racing.ListRacesRequestFil
 	}
 
 	return query, args
+}
+
+// If order_by parameter is provided, send through to the SQL query
+func (r *racesRepo) applySort(query string, order_by string) string {
+
+	if len(order_by) > 0 {
+		sanitised_order_by := sanitiseOrderBy(order_by)
+		if len(sanitised_order_by) > 0 {
+			query += " ORDER BY " + sanitised_order_by
+		}
+	}
+
+	return query
+}
+
+// Sanitise sort order input to prevent sql injection
+func sanitiseOrderBy(order_by string) string {
+	orders_in := strings.Split(order_by, ",")
+	orders_out := []string{}
+
+	for _, order_in := range orders_in {
+		//Match only valid sql order by syntax
+		re := regexp.MustCompile("(?i)^ *([0-9a-z_]*) *( +(asc|desc))? *$")
+
+		//Extract column name and sort orders from order by component
+		matches := re.FindStringSubmatch(order_in)
+
+		//Only add if component is valid, otherwise skip
+		if len(matches) >= 2 {
+
+			column_name := matches[1]
+
+			//Add sort order if one was found in the input segment
+			var sort_order string
+			if len(matches) >= 3 {
+				sort_order = matches[2]
+			} else {
+				sort_order = ""
+			}
+
+			orders_out = append(orders_out, column_name+sort_order)
+		}
+	}
+
+	return strings.Join(orders_out, ",")
 }
 
 func (m *racesRepo) scanRaces(

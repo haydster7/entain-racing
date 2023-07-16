@@ -63,15 +63,18 @@ go build && ./api
 ```bash
 curl -X "POST" "http://localhost:8000/v1/list-races" \
      -H 'Content-Type: application/json' \
-     -d $'{
-  "filter": {}
-}'
+     -d $'{}'
 ```
 
-`filter` can include the following attributes to filter the resulting list
+Request `body` can include the following attributes, all are optional
 ```
-meeting_ids: int[]
-visible: bool
+{
+   filter: {
+      meeting_ids: int[],
+      visible: bool
+   },
+   order_by: string
+}
 ```
 
 ### Changes/Updates Required
