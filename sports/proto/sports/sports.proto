@@ -1,0 +1,69 @@
+syntax = "proto3";
+package sports;
+
+option go_package = "/sports";
+
+import "google/protobuf/timestamp.proto";
+
+service Sports {
+	// ListSports will return a collection of sport events
+  rpc ListEvents(ListEventsRequest) returns (ListEventsResponse) {}
+	// GetSport will return a single sport event matching the requested id
+  rpc GetEvent(GetEventRequest) returns (GetEventResponse) {}
+}
+
+/* Requests/Responses */
+
+//RPC: ListEvents
+
+//Request to ListEvents call
+message ListEventsRequest {
+  ListEventsRequestFilter filter = 1;
+  string order_by = 2;
+}
+
+// Response to ListEvents call.
+message ListEventsResponse {
+  repeated Event events = 1;
+}
+
+// Filter for listing sport events
+message ListEventsRequestFilter {
+  repeated int64 meeting_ids = 1;
+  optional bool visible = 2;
+}
+
+
+//RPC: GetSport
+
+//Request to GetEvent call
+message GetEventRequest {
+  int64 id = 1;
+}
+
+// Response to GetSport call.
+message GetEventResponse {
+  Event event = 1;
+}
+
+
+/* Resources */
+
+// A sport event resource.
+message Event {
+  // ID represents a unique identifier for the sport.
+  int64 id = 1;
+  // MeetingID represents a unique identifier for the sports meeting.
+  int64 meeting_id = 2;
+  // Name is the official name given to the sport.
+  string name = 3;
+  // Number represents the number of the sport.
+  int64 number = 4;
+  // Visible represents whether or not the sport is visible.
+  bool visible = 5;
+  // AdvertisedStartTime is the time the sport is advertised to run.
+  google.protobuf.Timestamp advertised_start_time = 6;
+  // status determines if a sport is open or closed based on advertised_start_time
+  string status = 7;
+}
+
