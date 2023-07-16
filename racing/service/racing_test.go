@@ -45,9 +45,7 @@ func compareRaces(r1 *racing.Race, r2 *racing.Race, t *testing.T) bool {
 		r1.Status == r2.Status
 }
 
-func listAssertions(t *testing.T, sampleRaces []*racing.Race, response *racing.ListRacesResponse, mock sqlmock.Sqlmock) {
-	responseRaces := response.Races
-
+func raceResultAssertions(t *testing.T, sampleRaces []*racing.Race, responseRaces []*racing.Race, mock sqlmock.Sqlmock) {
 	if len(responseRaces) != len(sampleRaces) {
 		t.Errorf("Returned races not expected length. Expected %q, got %q", len(sampleRaces), len(responseRaces))
 	}
@@ -116,7 +114,7 @@ func TestListRacesWithMeetingFilter(t *testing.T) {
 	//Cleanup mock database
 	mockDbHelper.Close()
 
-	listAssertions(t, sampleRaces, listResponse, mockDb.Mock)
+	raceResultAssertions(t, sampleRaces, listResponse.Races, mockDb.Mock)
 }
 
 // Tests list procedure with visibility filter
@@ -165,7 +163,7 @@ func TestListRacesWithVisibilityFilter(t *testing.T) {
 	//Cleanup mock database
 	mockDbHelper.Close()
 
-	listAssertions(t, sampleRaces, listResponse, mockDb.Mock)
+	raceResultAssertions(t, sampleRaces, listResponse.Races, mockDb.Mock)
 }
 
 // Tests list prodecure with sort order specified
@@ -207,7 +205,7 @@ func TestListRacesWithSortOrder(t *testing.T) {
 	//Cleanup mock database
 	mockDbHelper.Close()
 
-	listAssertions(t, sampleRaces, listResponse, mockDb.Mock)
+	raceResultAssertions(t, sampleRaces, listResponse.Races, mockDb.Mock)
 }
 
 // Tests list prodecure with varying statuses
@@ -249,5 +247,61 @@ func TestListRacesStatuses(t *testing.T) {
 	//Cleanup mock database
 	mockDbHelper.Close()
 
-	listAssertions(t, sampleRaces, listResponse, mockDb.Mock)
+	raceResultAssertions(t, sampleRaces, listResponse.Races, mockDb.Mock)
+}
+
+// Test getting a single race by id
+func TestGetRace(t *testing.T) {
+
+	//Initiliase mock database
+	mockDbHelper := test_utils.NewMockRaceDb(t)
+	mockDb := mockDbHelper.Init()
+
+	//Configure mock database for test data and expected results
+
+	//Randomly chosed fixed date to use where time is not part of test
+	mockTime := time.Now()
+
+	//Add sample data for test in the format
+	//{"id", "meeting_id", "name", "number", "visible", "advertised_start_time"}
+
+	//Races to return for expected query/args
+	sampleRaces := []*racing.Race{
+		{Id: 2, MeetingId: 1, Name: "Mock race 1", Number: 2, Visible: true, AdvertisedStartTime: timestamppb.New(mockTime), Status: "CLOSED"},
+	}
+
+	includedRows := mockDb.Mock.NewRows(mockDb.ColumnNames)
+	for _, race := range sampleRaces {
+		includedRows.AddRow(race.Id, race.MeetingId, race.Name, race.Number, race.Visible, race.AdvertisedStartTime.AsTime())
+	}
+
+	mockDb.Mock.
+		ExpectQuery(`SELECT id, meeting_id, name, number, visible, advertised_start_time FROM races WHERE id = ?`).
+		WithArgs(2).
+		WillReturnRows(includedRows)
+
+	//Create mock request as input
+	var getRaceRequest racing.GetRaceRequest
+	getRaceRequest.Id = 2
+
+	//Create service using mock db and filter
+	mockRacesRepo := db.NewRacesRepo(mockDb.DB)
+	racingService := NewRacingService(mockRacesRepo)
+
+	//Call service
+	getRaceResponse, err := racingService.GetRace(context.TODO(), &getRaceRequest)
+
+	//Fail test if errors occurred
+	if err != nil {
+		t.Error("Error listing races:")
+		t.Error(err)
+	}
+
+	t.Log("get race response:")
+	t.Log(getRaceResponse)
+
+	//Cleanup mock database
+	mockDbHelper.Close()
+
+	raceResultAssertions(t, sampleRaces, []*racing.Race{getRaceResponse.Race}, mockDb.Mock)
 }

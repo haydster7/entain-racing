@@ -20,6 +20,9 @@ type RacesRepo interface {
 
 	// List will return a list of races.
 	List(filter *racing.ListRacesRequestFilter, order_by string) ([]*racing.Race, error)
+
+	// Get will return an individual race
+	Get(id int64) (*racing.Race, error)
 }
 
 type racesRepo struct {
@@ -44,6 +47,28 @@ func (r *racesRepo) Init() error {
 	return err
 }
 
+func (r *racesRepo) Get(id int64) (*racing.Race, error) {
+	var (
+		err   error
+		query string
+		args  []interface{}
+	)
+
+	query = getRaceQueries()[racesList]
+
+	query, args = r.applyGet(query, id)
+
+	rows, err := r.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+
+	if !rows.Next() {
+		return nil, nil
+	}
+	return r.scanRace(rows, time.Now())
+}
+
 func (r *racesRepo) List(filter *racing.ListRacesRequestFilter, order_by string) ([]*racing.Race, error) {
 	var (
 		err   error
@@ -63,6 +88,13 @@ func (r *racesRepo) List(filter *racing.ListRacesRequestFilter, order_by string)
 	}
 
 	return r.scanRaces(rows)
+}
+
+func (r *racesRepo) applyGet(query string, id int64) (string, []interface{}) {
+	var args []interface{}
+	args = append(args, id)
+	query += " WHERE id = ?"
+	return query, args
 }
 
 func (r *racesRepo) applyFilter(query string, filter *racing.ListRacesRequestFilter) (string, []interface{}) {
@@ -148,27 +180,35 @@ func (m *racesRepo) scanRaces(
 	requestTime := time.Now()
 
 	for rows.Next() {
-		var race racing.Race
-		var advertisedStart time.Time
-
-		if err := rows.Scan(&race.Id, &race.MeetingId, &race.Name, &race.Number, &race.Visible, &advertisedStart); err != nil {
-			if err == sql.ErrNoRows {
-				return nil, nil
-			}
-
+		race, err := m.scanRace(rows, requestTime)
+		if err != nil {
 			return nil, err
 		}
-
-		race.Status = getRaceStatus(&advertisedStart, &requestTime)
-
-		ts := timestamppb.New(advertisedStart)
-
-		race.AdvertisedStartTime = ts
-
-		races = append(races, &race)
+		races = append(races, race)
 	}
 
 	return races, nil
+}
+
+func (m *racesRepo) scanRace(rows *sql.Rows, requestTime time.Time) (*racing.Race, error) {
+	var race racing.Race
+	var advertisedStart time.Time
+
+	if err := rows.Scan(&race.Id, &race.MeetingId, &race.Name, &race.Number, &race.Visible, &advertisedStart); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+
+		return nil, err
+	}
+
+	race.Status = getRaceStatus(&advertisedStart, &requestTime)
+
+	ts := timestamppb.New(advertisedStart)
+
+	race.AdvertisedStartTime = ts
+
+	return &race, nil
 }
 
 func getRaceStatus(startTime *time.Time, requestTime *time.Time) string {

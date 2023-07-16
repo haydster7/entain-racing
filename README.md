@@ -58,7 +58,7 @@ go build && ./api
 ➜ INFO[0000] API server listening on: localhost:8000
 ```
 
-4. Make a request for races... 
+4. Make a request for all races... 
 
 ```bash
 curl -X "POST" "http://localhost:8000/v1/list-races" \
@@ -66,16 +66,8 @@ curl -X "POST" "http://localhost:8000/v1/list-races" \
      -d $'{}'
 ```
 
-Request `body` can include the following attributes, all are optional
-```
-{
-   filter: {
-      meeting_ids: int[],
-      visible: bool
-   },
-   order_by: string
-}
-```
+For all available services and their request/response formats, see the api [protodoc](./api/proto/doc/proto.md)
+
 
 ### Changes/Updates Required
 
