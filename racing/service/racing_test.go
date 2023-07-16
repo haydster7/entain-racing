@@ -41,7 +41,8 @@ func compareRaces(r1 *racing.Race, r2 *racing.Race, t *testing.T) bool {
 		r1.Name == r2.Name &&
 		r1.Number == r2.Number &&
 		r1.Visible == r2.Visible &&
-		r1.AdvertisedStartTime.Seconds == r2.AdvertisedStartTime.Seconds
+		r1.AdvertisedStartTime.Seconds == r2.AdvertisedStartTime.Seconds &&
+		r1.Status == r2.Status
 }
 
 func listAssertions(t *testing.T, sampleRaces []*racing.Race, response *racing.ListRacesResponse, mock sqlmock.Sqlmock) {
@@ -89,8 +90,8 @@ func TestListRacesWithMeetingFilter(t *testing.T) {
 
 	//Races to return for expected query/args
 	sampleRaces := []*racing.Race{
-		{Id: 1, MeetingId: meetingIds[0], Name: "Mock race 1", Number: 2, Visible: false, AdvertisedStartTime: &mockTimestamp},
-		{Id: 2, MeetingId: meetingIds[1], Name: "Mock race 3", Number: 5, Visible: true, AdvertisedStartTime: &mockTimestamp},
+		{Id: 1, MeetingId: meetingIds[0], Name: "Mock race 1", Number: 2, Visible: false, AdvertisedStartTime: &mockTimestamp, Status: "CLOSED"},
+		{Id: 2, MeetingId: meetingIds[1], Name: "Mock race 3", Number: 5, Visible: true, AdvertisedStartTime: &mockTimestamp, Status: "CLOSED"},
 	}
 
 	includedRows := mockDb.Mock.NewRows(mockDb.ColumnNames)
@@ -134,8 +135,8 @@ func TestListRacesWithVisibilityFilter(t *testing.T) {
 
 	//Races to return for expected query/args
 	sampleRaces := []*racing.Race{
-		{Id: 1, MeetingId: 1, Name: "Mock race 1", Number: 2, Visible: true, AdvertisedStartTime: &mockTimestamp},
-		{Id: 2, MeetingId: 9, Name: "Mock race 3", Number: 5, Visible: true, AdvertisedStartTime: &mockTimestamp},
+		{Id: 1, MeetingId: 1, Name: "Mock race 1", Number: 2, Visible: true, AdvertisedStartTime: &mockTimestamp, Status: "CLOSED"},
+		{Id: 2, MeetingId: 9, Name: "Mock race 3", Number: 5, Visible: true, AdvertisedStartTime: &mockTimestamp, Status: "CLOSED"},
 	}
 
 	includedRows := mockDb.Mock.NewRows(mockDb.ColumnNames)
@@ -183,8 +184,8 @@ func TestListRacesWithSortOrder(t *testing.T) {
 
 	//Races to return for expected query/args
 	sampleRaces := []*racing.Race{
-		{Id: 1, MeetingId: 1, Name: "Mock race 1", Number: 2, Visible: true, AdvertisedStartTime: timestamppb.New(mockTime.Add(time.Second * 2))},
-		{Id: 2, MeetingId: 9, Name: "Mock race 3", Number: 5, Visible: true, AdvertisedStartTime: timestamppb.New(mockTime.Add(time.Second * 1))},
+		{Id: 1, MeetingId: 1, Name: "Mock race 1", Number: 2, Visible: true, AdvertisedStartTime: timestamppb.New(mockTime.Add(time.Second * 2)), Status: "CLOSED"},
+		{Id: 2, MeetingId: 9, Name: "Mock race 3", Number: 5, Visible: true, AdvertisedStartTime: timestamppb.New(mockTime.Add(time.Second * 1)), Status: "CLOSED"},
 	}
 
 	includedRows := mockDb.Mock.NewRows(mockDb.ColumnNames)
@@ -200,6 +201,48 @@ func TestListRacesWithSortOrder(t *testing.T) {
 	listRacesRequest := racing.ListRacesRequest{
 		OrderBy: "advertised_start_time desc",
 	}
+
+	listResponse := listTestRun(t, mockDb.DB, &listRacesRequest)
+
+	//Cleanup mock database
+	mockDbHelper.Close()
+
+	listAssertions(t, sampleRaces, listResponse, mockDb.Mock)
+}
+
+// Tests list prodecure with varying statuses
+func TestListRacesStatuses(t *testing.T) {
+	//Initiliase mock database
+	mockDbHelper := test_utils.NewMockRaceDb(t)
+	mockDb := mockDbHelper.Init()
+
+	//Configure mock database for test data and expected results
+
+	//Randomly chosed fixed date to use where time is not part of test
+	mockTime := time.Now()
+	mockTimePast := mockTime.Add(time.Minute * -1)
+	mockTimeFuture := mockTime.Add(time.Minute)
+
+	//Add sample data for test in the format
+	//{"id", "meeting_id", "name", "number", "visible", "advertised_start_time"}
+
+	//Races to return for expected query/args
+	sampleRaces := []*racing.Race{
+		{Id: 1, MeetingId: 1, Name: "Mock race 1", Number: 2, Visible: true, AdvertisedStartTime: timestamppb.New(mockTimePast), Status: "CLOSED"},
+		{Id: 2, MeetingId: 9, Name: "Mock race 3", Number: 5, Visible: true, AdvertisedStartTime: timestamppb.New(mockTimeFuture), Status: "OPEN"},
+	}
+
+	includedRows := mockDb.Mock.NewRows(mockDb.ColumnNames)
+	for _, race := range sampleRaces {
+		includedRows.AddRow(race.Id, race.MeetingId, race.Name, race.Number, race.Visible, race.AdvertisedStartTime.AsTime())
+	}
+
+	mockDb.Mock.
+		ExpectQuery(`SELECT id, meeting_id, name, number, visible, advertised_start_time FROM races`).
+		WillReturnRows(includedRows)
+
+	//Create mock request as input
+	listRacesRequest := racing.ListRacesRequest{}
 
 	listResponse := listTestRun(t, mockDb.DB, &listRacesRequest)
 
