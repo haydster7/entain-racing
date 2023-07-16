@@ -68,6 +68,12 @@ curl -X "POST" "http://localhost:8000/v1/list-races" \
 }'
 ```
 
+`filter` can include the following attributes to filter the resulting list
+```
+meeting_ids: int[]
+visible: bool
+```
+
 ### Changes/Updates Required
 
 - We'd like to see you push this repository up to **GitHub/Gitlab/Bitbucket** and lodge a **Pull/Merge Request for each** of the below tasks.

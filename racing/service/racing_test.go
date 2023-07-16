@@ -117,3 +117,48 @@ func TestListRacesWithMeetingFilter(t *testing.T) {
 
 	listAssertions(t, sampleRaces, listResponse, mockDb.Mock)
 }
+
+// Tests list prodecure with visibility filter
+func TestListRacesWithVisibilityFilter(t *testing.T) {
+	//Initiliase mock database
+	mockDbHelper := test_utils.NewMockRaceDb(t)
+	mockDb := mockDbHelper.Init()
+
+	//Configure mock database for test data and expected results
+
+	//Randomly chosed fixed date to use where time is not part of test
+	var mockTimestamp timestamppb.Timestamp = *timestamppb.New(time.Date(2021, time.March, 3, 11, 30, 57, 0, time.FixedZone("", 36000)))
+
+	//Add sample data for test in the format
+	//{"id", "meeting_id", "name", "number", "visible", "advertised_start_time"}
+
+	//Races to return for expected query/args
+	sampleRaces := []*racing.Race{
+		{Id: 1, MeetingId: 1, Name: "Mock race 1", Number: 2, Visible: true, AdvertisedStartTime: &mockTimestamp},
+		{Id: 2, MeetingId: 9, Name: "Mock race 3", Number: 5, Visible: true, AdvertisedStartTime: &mockTimestamp},
+	}
+
+	includedRows := mockDb.Mock.NewRows(mockDb.ColumnNames)
+	for _, race := range sampleRaces {
+		includedRows.AddRow(race.Id, race.MeetingId, race.Name, race.Number, race.Visible, race.AdvertisedStartTime.AsTime())
+	}
+
+	mockDb.Mock.
+		ExpectQuery(`SELECT id, meeting_id, name, number, visible, advertised_start_time FROM races WHERE visible = ?`).
+		WithArgs(true).
+		WillReturnRows(includedRows)
+
+	//Create mock filter
+	visibility := new(bool)
+	*visibility = true
+	listRacesRequestFilter := racing.ListRacesRequestFilter{
+		Visible: visibility,
+	}
+
+	listResponse := listTestRun(t, mockDb.DB, &listRacesRequestFilter)
+
+	//Cleanup mock database
+	mockDbHelper.Close()
+
+	listAssertions(t, sampleRaces, listResponse, mockDb.Mock)
+}
