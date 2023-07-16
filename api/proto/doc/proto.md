@@ -13,6 +13,16 @@
   
     - [Racing](#racing-Racing)
   
+- [sports/sports.proto](#sports_sports-proto)
+    - [Event](#sports-Event)
+    - [GetEventRequest](#sports-GetEventRequest)
+    - [GetEventResponse](#sports-GetEventResponse)
+    - [ListEventsRequest](#sports-ListEventsRequest)
+    - [ListEventsRequestFilter](#sports-ListEventsRequestFilter)
+    - [ListEventsResponse](#sports-ListEventsResponse)
+  
+    - [Sports](#sports-Sports)
+  
 - [Scalar Value Types](#scalar-value-types)
 
 
@@ -137,6 +147,131 @@ A race resource.
 | ----------- | ------------ | ------------- | ------------|
 | ListRaces | [ListRacesRequest](#racing-ListRacesRequest) | [ListRacesResponse](#racing-ListRacesResponse) | ListRaces returns a list of all races. |
 | GetRace | [GetRaceRequest](#racing-GetRaceRequest) | [GetRaceResponse](#racing-GetRaceResponse) | GetRace returns a single race matching the requested id |
+
+ 
+
+
+
+<a name="sports_sports-proto"></a>
+<p align="right"><a href="#top">Top</a></p>
+
+## sports/sports.proto
+
+
+
+<a name="sports-Event"></a>
+
+### Event
+A sport event resource.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| id | [int64](#int64) |  | ID represents a unique identifier for the sport. |
+| meeting_id | [int64](#int64) |  | MeetingID represents a unique identifier for the sports meeting. |
+| name | [string](#string) |  | Name is the official name given to the sport. |
+| number | [int64](#int64) |  | Number represents the number of the sport. |
+| visible | [bool](#bool) |  | Visible represents whether or not the sport is visible. |
+| advertised_start_time | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | AdvertisedStartTime is the time the sport is advertised to run. |
+| status | [string](#string) |  | status determines if a sport is open or closed based on advertised_start_time |
+
+
+
+
+
+
+<a name="sports-GetEventRequest"></a>
+
+### GetEventRequest
+Request to GetEvent call
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| id | [int64](#int64) |  |  |
+
+
+
+
+
+
+<a name="sports-GetEventResponse"></a>
+
+### GetEventResponse
+Response to GetSport call.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| event | [Event](#sports-Event) |  |  |
+
+
+
+
+
+
+<a name="sports-ListEventsRequest"></a>
+
+### ListEventsRequest
+Request to ListEvents call
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| filter | [ListEventsRequestFilter](#sports-ListEventsRequestFilter) |  |  |
+| order_by | [string](#string) |  |  |
+
+
+
+
+
+
+<a name="sports-ListEventsRequestFilter"></a>
+
+### ListEventsRequestFilter
+Filter for listing sport events
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| meeting_ids | [int64](#int64) | repeated |  |
+| visible | [bool](#bool) | optional |  |
+
+
+
+
+
+
+<a name="sports-ListEventsResponse"></a>
+
+### ListEventsResponse
+Response to ListEvents call.
+
+
+| Field | Type | Label | Description |
+| ----- | ---- | ----- | ----------- |
+| events | [Event](#sports-Event) | repeated |  |
+
+
+
+
+
+ 
+
+ 
+
+ 
+
+
+<a name="sports-Sports"></a>
+
+### Sports
+
+
+| Method Name | Request Type | Response Type | Description |
+| ----------- | ------------ | ------------- | ------------|
+| ListEvents | [ListEventsRequest](#sports-ListEventsRequest) | [ListEventsResponse](#sports-ListEventsResponse) | ListSports will return a collection of sport events |
+| GetEvent | [GetEventRequest](#sports-GetEventRequest) | [GetEventResponse](#sports-GetEventResponse) | GetSport will return a single sport event matching the requested id |
 
  
 
