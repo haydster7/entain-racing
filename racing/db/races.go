@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/protobuf/ptypes"
 	_ "github.com/mattn/go-sqlite3"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"git.neds.sh/matty/entain/racing/proto/racing"
 )
@@ -145,6 +145,7 @@ func (m *racesRepo) scanRaces(
 	rows *sql.Rows,
 ) ([]*racing.Race, error) {
 	var races []*racing.Race
+	requestTime := time.Now()
 
 	for rows.Next() {
 		var race racing.Race
@@ -158,10 +159,9 @@ func (m *racesRepo) scanRaces(
 			return nil, err
 		}
 
-		ts, err := ptypes.TimestampProto(advertisedStart)
-		if err != nil {
-			return nil, err
-		}
+		race.Status = getRaceStatus(&advertisedStart, &requestTime)
+
+		ts := timestamppb.New(advertisedStart)
 
 		race.AdvertisedStartTime = ts
 
@@ -169,4 +169,14 @@ func (m *racesRepo) scanRaces(
 	}
 
 	return races, nil
+}
+
+func getRaceStatus(startTime *time.Time, requestTime *time.Time) string {
+	if startTime.Before(*requestTime) {
+		//advertised start time is in the past
+		return "CLOSED"
+	} else {
+		//advertised start time is equal to current time or in the future
+		return "OPEN"
+	}
 }
