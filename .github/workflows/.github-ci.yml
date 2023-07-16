@@ -8,6 +8,7 @@ on:
     branches:
       - "main"
       - "pipeline"
+      - "testing-framework"
   pull_request:
     branches:
       - "main"
@@ -40,5 +41,7 @@ jobs:
           (cd racing && go generate ./... && go build)
           (cd api && go generate ./... && go build)
 
-      #- name: Test
-      #  run: go test -v ./...
+      - name: Test
+        run: |
+          (cd racing && go test ./...)
+          (cd api && go test ./...)
