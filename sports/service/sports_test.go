@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"testing"
 	"time"
 
@@ -37,11 +38,13 @@ func listTestRun(t *testing.T, mockDb *sql.DB, request *sports.ListEventsRequest
 
 func compareEvents(r1 *sports.Event, r2 *sports.Event, t *testing.T) bool {
 	return r1.Id == r2.Id &&
-		r1.MeetingId == r2.MeetingId &&
-		r1.Name == r2.Name &&
-		r1.Number == r2.Number &&
-		r1.Visible == r2.Visible &&
+		r1.AwayTeam == r2.AwayTeam &&
+		r1.HomeTeam == r2.HomeTeam &&
+		r1.Location == r2.Location &&
+		r1.Capacity == r2.Capacity &&
+		r1.Sport == r2.Sport &&
 		r1.AdvertisedStartTime.Seconds == r2.AdvertisedStartTime.Seconds &&
+		r1.ExpectedEndTime.Seconds == r2.ExpectedEndTime.Seconds &&
 		r1.Status == r2.Status
 }
 
@@ -54,14 +57,14 @@ func sportsResultAssertions(t *testing.T, sampleEvents []*sports.Event, response
 	for i, event := range sampleEvents {
 		if !compareEvents(event, responseEvents[i], t) {
 			areEventsEqual = false
-			t.Logf("Race[%d] does not match", i)
+			t.Logf("Event[%d] does not match", i)
 			break
 		}
 	}
 	if !areEventsEqual {
 		t.Error("Returned events do not match expected events")
 		t.Errorf("Expected: %v", sampleEvents)
-		t.Errorf("Got: %v", sampleEvents)
+		t.Errorf("Got: %v", responseEvents)
 	}
 
 	expectationsError := mock.ExpectationsWereMet()
@@ -71,41 +74,91 @@ func sportsResultAssertions(t *testing.T, sampleEvents []*sports.Event, response
 	}
 }
 
-// Tests list procedure with meeting id filter
-func TestListEventsWithMeetingFilter(t *testing.T) {
+func rowValuesFromEvent(t *testing.T, event *sports.Event) (values []driver.Value) {
+	startTime := event.AdvertisedStartTime.AsTime()
+	endTime := event.ExpectedEndTime.AsTime()
+	duration := endTime.Sub(startTime) / time.Minute
+
+	return []driver.Value{
+		event.Id,
+		event.HomeTeam,
+		event.AwayTeam,
+		event.Sport,
+		event.Location,
+		event.Capacity,
+		startTime,
+		duration,
+	}
+}
+
+// Tests list procedure with team filter
+func TestListEventsWithTeamFilter(t *testing.T) {
 	//Initiliase mock database
 	mockDbHelper := test_utils.NewMockSportDb(t)
 	mockDb := mockDbHelper.Init()
 
 	//Configure mock database for test data and expected results
+	teamSearch := "brisbane"
 
 	//Randomly chosed fixed date to use where time is not part of test
-	var mockTimestamp timestamppb.Timestamp = *timestamppb.New(time.Date(2021, time.March, 3, 11, 30, 57, 0, time.FixedZone("", 36000)))
-
-	//Add sample data for test in the format
-	//{"id", "meeting_id", "name", "number", "visible", "advertised_start_time"}
-	meetingIds := []int64{1, 9}
+	var mockStartTimestamp timestamppb.Timestamp = *timestamppb.New(time.Date(2021, time.March, 3, 11, 30, 57, 0, time.FixedZone("", 36000)))
+	var mockEndTimestamp timestamppb.Timestamp = *timestamppb.New(time.Date(2021, time.March, 3, 11, 50, 57, 0, time.FixedZone("", 36000)))
 
 	//Events to return for expected query/args
 	sampleEvents := []*sports.Event{
-		{Id: 1, MeetingId: meetingIds[0], Name: "Mock sport event 1", Number: 2, Visible: false, AdvertisedStartTime: &mockTimestamp, Status: "CLOSED"},
-		{Id: 2, MeetingId: meetingIds[1], Name: "Mock sport event 3", Number: 5, Visible: true, AdvertisedStartTime: &mockTimestamp, Status: "CLOSED"},
+		{
+			Id:                  1,
+			HomeTeam:            "Brisbane Broncos",
+			AwayTeam:            "Gold Coast Titans",
+			Sport:               "Rugby league",
+			Location:            "Brisbane",
+			Capacity:            30000,
+			AdvertisedStartTime: &mockStartTimestamp,
+			ExpectedEndTime:     &mockEndTimestamp,
+			Status:              "CLOSED",
+		},
+		{
+			Id:                  2,
+			HomeTeam:            "Sydney Swans",
+			AwayTeam:            "Brisbane Cowboys",
+			Sport:               "Rugby league",
+			Location:            "Sydney",
+			Capacity:            40000,
+			AdvertisedStartTime: &mockStartTimestamp,
+			ExpectedEndTime:     &mockEndTimestamp,
+			Status:              "CLOSED",
+		},
 	}
 
-	includedRows := mockDb.Mock.NewRows(mockDb.ColumnNames)
+	includedRows := mockDb.Mock.NewRows(mockDb.JoinColumnNames)
 	for _, event := range sampleEvents {
-		includedRows.AddRow(event.Id, event.MeetingId, event.Name, event.Number, event.Visible, event.AdvertisedStartTime.AsTime())
+		includedRows.AddRow(rowValuesFromEvent(t, event)...)
 	}
 
 	mockDb.Mock.
-		ExpectQuery(`SELECT id, meeting_id, name, number, visible, advertised_start_time FROM sports WHERE meeting_id IN (?,?)`).
-		WithArgs(meetingIds[0], meetingIds[1]).
+		ExpectQuery(`
+			SELECT
+				event.id,
+				team_home.name as home_team,
+				team_away.name as away_team,
+				sport.name as sport,
+				location.city as location,
+				location.capacity,
+				event.advertised_start_time,
+				event.duration
+			FROM event
+			INNER JOIN team team_home ON team_home.id = event.team_home_id
+			INNER JOIN team team_away ON team_away.id = event.team_away_id
+			INNER JOIN sport ON sport.id = event.sport_id
+			INNER JOIN location ON location.id = event.location_id
+			WHERE (home_team LIKE ? OR away_team LIKE ?)`).
+		WithArgs("%"+teamSearch+"%", "%"+teamSearch+"%").
 		WillReturnRows(includedRows)
 
 	//Create mock request and filter as input
 	listEventsRequest := sports.ListEventsRequest{
 		Filter: &sports.ListEventsRequestFilter{
-			MeetingIds: meetingIds,
+			Team: teamSearch,
 		},
 	}
 
@@ -117,193 +170,240 @@ func TestListEventsWithMeetingFilter(t *testing.T) {
 	sportsResultAssertions(t, sampleEvents, listResponse.Events, mockDb.Mock)
 }
 
-/**************
-// Tests list procedure with visibility filter
-func TestListRacesWithVisibilityFilter(t *testing.T) {
+// Tests list procedure with status filter
+func TestListEventsWithStatusFilter(t *testing.T) {
 	//Initiliase mock database
-	mockDbHelper := test_utils.NewMockRaceDb(t)
+	mockDbHelper := test_utils.NewMockSportDb(t)
 	mockDb := mockDbHelper.Init()
 
 	//Configure mock database for test data and expected results
 
 	//Randomly chosed fixed date to use where time is not part of test
-	var mockTimestamp timestamppb.Timestamp = *timestamppb.New(time.Date(2021, time.March, 3, 11, 30, 57, 0, time.FixedZone("", 36000)))
+	var currentTime = time.Now()
+	var mockStartTimestamp timestamppb.Timestamp = *timestamppb.New(currentTime.Add(10 * time.Minute))
+	var mockEndTimestamp timestamppb.Timestamp = *timestamppb.New(currentTime.Add(40 * time.Minute))
 
-	//Add sample data for test in the format
-	//{"id", "meeting_id", "name", "number", "visible", "advertised_start_time"}
-
-	//Races to return for expected query/args
-	sampleRaces := []*racing.Race{
-		{Id: 1, MeetingId: 1, Name: "Mock race 1", Number: 2, Visible: true, AdvertisedStartTime: &mockTimestamp, Status: "CLOSED"},
-		{Id: 2, MeetingId: 9, Name: "Mock race 3", Number: 5, Visible: true, AdvertisedStartTime: &mockTimestamp, Status: "CLOSED"},
-	}
-
-	includedRows := mockDb.Mock.NewRows(mockDb.ColumnNames)
-	for _, race := range sampleRaces {
-		includedRows.AddRow(race.Id, race.MeetingId, race.Name, race.Number, race.Visible, race.AdvertisedStartTime.AsTime())
-	}
-
-	mockDb.Mock.
-		ExpectQuery(`SELECT id, meeting_id, name, number, visible, advertised_start_time FROM races WHERE visible = ?`).
-		WithArgs(true).
-		WillReturnRows(includedRows)
-
-	//Create mock filter
-	visibility := new(bool)
-	*visibility = true
-
-	//Create mock request and filter as input
-	listRacesRequest := racing.ListRacesRequest{
-		Filter: &racing.ListRacesRequestFilter{
-			Visible: visibility,
+	//Events to return for expected query/args
+	sampleEvents := []*sports.Event{
+		{
+			Id:                  1,
+			HomeTeam:            "Brisbane Broncos",
+			AwayTeam:            "Gold Coast Titans",
+			Sport:               "Rugby league",
+			Location:            "Brisbane",
+			Capacity:            30000,
+			AdvertisedStartTime: &mockStartTimestamp,
+			ExpectedEndTime:     &mockEndTimestamp,
+			Status:              "OPEN",
+		},
+		{
+			Id:                  2,
+			HomeTeam:            "Sydney Swans",
+			AwayTeam:            "Brisbane Cowboys",
+			Sport:               "Rugby league",
+			Location:            "Sydney",
+			Capacity:            40000,
+			AdvertisedStartTime: &mockStartTimestamp,
+			ExpectedEndTime:     &mockEndTimestamp,
+			Status:              "OPEN",
 		},
 	}
 
-	listResponse := listTestRun(t, mockDb.DB, &listRacesRequest)
+	includedRows := mockDb.Mock.NewRows(mockDb.JoinColumnNames)
+	for _, event := range sampleEvents {
+		includedRows.AddRow(rowValuesFromEvent(t, event)...)
+	}
+
+	mockDb.Mock.
+		ExpectQuery(`
+			SELECT
+				event.id,
+				team_home.name as home_team,
+				team_away.name as away_team,
+				sport.name as sport,
+				location.city as location,
+				location.capacity,
+				event.advertised_start_time,
+				event.duration
+			FROM event
+			INNER JOIN team team_home ON team_home.id = event.team_home_id
+			INNER JOIN team team_away ON team_away.id = event.team_away_id
+			INNER JOIN sport ON sport.id = event.sport_id
+			INNER JOIN location ON location.id = event.location_id`).
+		WillReturnRows(includedRows)
+
+	//Create mock request and filter as input
+	listEventsRequest := sports.ListEventsRequest{
+		Filter: &sports.ListEventsRequestFilter{
+			Status: "OPEN",
+		},
+	}
+
+	listResponse := listTestRun(t, mockDb.DB, &listEventsRequest)
 
 	//Cleanup mock database
 	mockDbHelper.Close()
 
-	raceResultAssertions(t, sampleRaces, listResponse.Races, mockDb.Mock)
+	sportsResultAssertions(t, sampleEvents, listResponse.Events, mockDb.Mock)
 }
 
-// Tests list prodecure with sort order specified
-func TestListRacesWithSortOrder(t *testing.T) {
+// Tests list procedure with status calculation based on time
+func TestListEventsStatusCalculation(t *testing.T) {
 	//Initiliase mock database
-	mockDbHelper := test_utils.NewMockRaceDb(t)
+	mockDbHelper := test_utils.NewMockSportDb(t)
 	mockDb := mockDbHelper.Init()
 
 	//Configure mock database for test data and expected results
 
 	//Randomly chosed fixed date to use where time is not part of test
-	mockTime := time.Date(2021, time.March, 3, 11, 30, 57, 0, time.FixedZone("", 36000))
+	var currentTime = time.Now()
 
-	//Add sample data for test in the format
-	//{"id", "meeting_id", "name", "number", "visible", "advertised_start_time"}
-
-	//Races to return for expected query/args
-	sampleRaces := []*racing.Race{
-		{Id: 1, MeetingId: 1, Name: "Mock race 1", Number: 2, Visible: true, AdvertisedStartTime: timestamppb.New(mockTime.Add(time.Second * 2)), Status: "CLOSED"},
-		{Id: 2, MeetingId: 9, Name: "Mock race 3", Number: 5, Visible: true, AdvertisedStartTime: timestamppb.New(mockTime.Add(time.Second * 1)), Status: "CLOSED"},
+	//Events to return for expected query/args
+	sampleEvents := []*sports.Event{
+		{
+			Id:                  1,
+			HomeTeam:            "Brisbane Broncos",
+			AwayTeam:            "Gold Coast Titans",
+			Sport:               "Rugby league",
+			Location:            "Brisbane",
+			Capacity:            30000,
+			AdvertisedStartTime: timestamppb.New(currentTime.Add(-10 * time.Minute)),
+			ExpectedEndTime:     timestamppb.New(currentTime.Add(10 * time.Minute)),
+			Status:              "INPROGRESS",
+		},
+		{
+			Id:                  2,
+			HomeTeam:            "Sydney Swans",
+			AwayTeam:            "Brisbane Cowboys",
+			Sport:               "Rugby league",
+			Location:            "Sydney",
+			Capacity:            40000,
+			AdvertisedStartTime: timestamppb.New(currentTime.Add(-20 * time.Minute)),
+			ExpectedEndTime:     timestamppb.New(currentTime.Add(-10 * time.Minute)),
+			Status:              "CLOSED",
+		},
+		{
+			Id:                  3,
+			HomeTeam:            "Sydney Swans",
+			AwayTeam:            "Canberra Raiders",
+			Sport:               "Rugby league",
+			Location:            "Sydney",
+			Capacity:            40000,
+			AdvertisedStartTime: timestamppb.New(currentTime.Add(10 * time.Minute)),
+			ExpectedEndTime:     timestamppb.New(currentTime.Add(20 * time.Minute)),
+			Status:              "OPEN",
+		},
 	}
 
-	includedRows := mockDb.Mock.NewRows(mockDb.ColumnNames)
-	for _, race := range sampleRaces {
-		includedRows.AddRow(race.Id, race.MeetingId, race.Name, race.Number, race.Visible, race.AdvertisedStartTime.AsTime())
+	includedRows := mockDb.Mock.NewRows(mockDb.JoinColumnNames)
+	for _, event := range sampleEvents {
+		includedRows.AddRow(rowValuesFromEvent(t, event)...)
 	}
 
 	mockDb.Mock.
-		ExpectQuery(`SELECT id, meeting_id, name, number, visible, advertised_start_time FROM races ORDER BY advertised_start_time desc`).
+		ExpectQuery(`
+			SELECT
+				event.id,
+				team_home.name as home_team,
+				team_away.name as away_team,
+				sport.name as sport,
+				location.city as location,
+				location.capacity,
+				event.advertised_start_time,
+				event.duration
+			FROM event
+			INNER JOIN team team_home ON team_home.id = event.team_home_id
+			INNER JOIN team team_away ON team_away.id = event.team_away_id
+			INNER JOIN sport ON sport.id = event.sport_id
+			INNER JOIN location ON location.id = event.location_id`).
 		WillReturnRows(includedRows)
 
-	//Create mock request as input
-	listRacesRequest := racing.ListRacesRequest{
-		OrderBy: "advertised_start_time desc",
-	}
+	//Create mock request and filter as input
+	listEventsRequest := sports.ListEventsRequest{}
 
-	listResponse := listTestRun(t, mockDb.DB, &listRacesRequest)
+	listResponse := listTestRun(t, mockDb.DB, &listEventsRequest)
 
 	//Cleanup mock database
 	mockDbHelper.Close()
 
-	raceResultAssertions(t, sampleRaces, listResponse.Races, mockDb.Mock)
+	sportsResultAssertions(t, sampleEvents, listResponse.Events, mockDb.Mock)
 }
 
-// Tests list prodecure with varying statuses
-func TestListRacesStatuses(t *testing.T) {
-	//Initiliase mock database
-	mockDbHelper := test_utils.NewMockRaceDb(t)
-	mockDb := mockDbHelper.Init()
-
-	//Configure mock database for test data and expected results
-
-	//Randomly chosed fixed date to use where time is not part of test
-	mockTime := time.Now()
-	mockTimePast := mockTime.Add(time.Minute * -1)
-	mockTimeFuture := mockTime.Add(time.Minute)
-
-	//Add sample data for test in the format
-	//{"id", "meeting_id", "name", "number", "visible", "advertised_start_time"}
-
-	//Races to return for expected query/args
-	sampleRaces := []*racing.Race{
-		{Id: 1, MeetingId: 1, Name: "Mock race 1", Number: 2, Visible: true, AdvertisedStartTime: timestamppb.New(mockTimePast), Status: "CLOSED"},
-		{Id: 2, MeetingId: 9, Name: "Mock race 3", Number: 5, Visible: true, AdvertisedStartTime: timestamppb.New(mockTimeFuture), Status: "OPEN"},
-	}
-
-	includedRows := mockDb.Mock.NewRows(mockDb.ColumnNames)
-	for _, race := range sampleRaces {
-		includedRows.AddRow(race.Id, race.MeetingId, race.Name, race.Number, race.Visible, race.AdvertisedStartTime.AsTime())
-	}
-
-	mockDb.Mock.
-		ExpectQuery(`SELECT id, meeting_id, name, number, visible, advertised_start_time FROM races`).
-		WillReturnRows(includedRows)
-
-	//Create mock request as input
-	listRacesRequest := racing.ListRacesRequest{}
-
-	listResponse := listTestRun(t, mockDb.DB, &listRacesRequest)
-
-	//Cleanup mock database
-	mockDbHelper.Close()
-
-	raceResultAssertions(t, sampleRaces, listResponse.Races, mockDb.Mock)
-}
-
-// Test getting a single race by id
+// Test getting a single event by id
 func TestGetRace(t *testing.T) {
-
 	//Initiliase mock database
-	mockDbHelper := test_utils.NewMockRaceDb(t)
+	mockDbHelper := test_utils.NewMockSportDb(t)
 	mockDb := mockDbHelper.Init()
 
 	//Configure mock database for test data and expected results
 
 	//Randomly chosed fixed date to use where time is not part of test
-	mockTime := time.Now()
+	var mockStartTimestamp timestamppb.Timestamp = *timestamppb.New(time.Date(2021, time.March, 3, 11, 30, 57, 0, time.FixedZone("", 36000)))
+	var mockEndTimestamp timestamppb.Timestamp = *timestamppb.New(time.Date(2021, time.March, 3, 11, 50, 57, 0, time.FixedZone("", 36000)))
 
-	//Add sample data for test in the format
-	//{"id", "meeting_id", "name", "number", "visible", "advertised_start_time"}
-
-	//Races to return for expected query/args
-	sampleRaces := []*racing.Race{
-		{Id: 2, MeetingId: 1, Name: "Mock race 1", Number: 2, Visible: true, AdvertisedStartTime: timestamppb.New(mockTime), Status: "CLOSED"},
+	//Events to return for expected query/args
+	sampleEvents := []*sports.Event{
+		{
+			Id:                  2,
+			HomeTeam:            "Sydney Swans",
+			AwayTeam:            "Brisbane Cowboys",
+			Sport:               "Rugby league",
+			Location:            "Sydney",
+			Capacity:            40000,
+			AdvertisedStartTime: &mockStartTimestamp,
+			ExpectedEndTime:     &mockEndTimestamp,
+			Status:              "CLOSED",
+		},
 	}
 
-	includedRows := mockDb.Mock.NewRows(mockDb.ColumnNames)
-	for _, race := range sampleRaces {
-		includedRows.AddRow(race.Id, race.MeetingId, race.Name, race.Number, race.Visible, race.AdvertisedStartTime.AsTime())
+	includedRows := mockDb.Mock.NewRows(mockDb.JoinColumnNames)
+	for _, event := range sampleEvents {
+		includedRows.AddRow(rowValuesFromEvent(t, event)...)
 	}
 
 	mockDb.Mock.
-		ExpectQuery(`SELECT id, meeting_id, name, number, visible, advertised_start_time FROM races WHERE id = ?`).
+		ExpectQuery(`
+			SELECT
+				event.id,
+				team_home.name as home_team,
+				team_away.name as away_team,
+				sport.name as sport,
+				location.city as location,
+				location.capacity,
+				event.advertised_start_time,
+				event.duration
+			FROM event
+			INNER JOIN team team_home ON team_home.id = event.team_home_id
+			INNER JOIN team team_away ON team_away.id = event.team_away_id
+			INNER JOIN sport ON sport.id = event.sport_id
+			INNER JOIN location ON location.id = event.location_id
+			WHERE event.id = ?`).
 		WithArgs(2).
 		WillReturnRows(includedRows)
 
-	//Create mock request as input
-	var getRaceRequest racing.GetRaceRequest
-	getRaceRequest.Id = 2
+	//Create mock request and filter as input
+	getEventRequest := sports.GetEventRequest{
+		Id: 2,
+	}
 
 	//Create service using mock db and filter
-	mockRacesRepo := db.NewRacesRepo(mockDb.DB)
-	racingService := NewRacingService(mockRacesRepo)
+	mockSportsRepo := db.NewSportsRepo(mockDb.DB)
+	sportsService := NewSportsService(mockSportsRepo)
 
 	//Call service
-	getRaceResponse, err := racingService.GetRace(context.TODO(), &getRaceRequest)
+	getEventResponse, err := sportsService.GetEvent(context.TODO(), &getEventRequest)
 
 	//Fail test if errors occurred
 	if err != nil {
-		t.Error("Error listing races:")
+		t.Error("Error listing event(s):")
 		t.Error(err)
 	}
 
-	t.Log("get race response:")
-	t.Log(getRaceResponse)
+	t.Log("get event response:")
+	t.Log(getEventResponse)
 
 	//Cleanup mock database
 	mockDbHelper.Close()
 
-	raceResultAssertions(t, sampleRaces, []*racing.Race{getRaceResponse.Race}, mockDb.Mock)
+	sportsResultAssertions(t, sampleEvents, []*sports.Event{getEventResponse.Event}, mockDb.Mock)
 }
-*****************/

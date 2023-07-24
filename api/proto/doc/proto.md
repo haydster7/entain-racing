@@ -167,13 +167,15 @@ A sport event resource.
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| id | [int64](#int64) |  | ID represents a unique identifier for the sport. |
-| meeting_id | [int64](#int64) |  | MeetingID represents a unique identifier for the sports meeting. |
-| name | [string](#string) |  | Name is the official name given to the sport. |
-| number | [int64](#int64) |  | Number represents the number of the sport. |
-| visible | [bool](#bool) |  | Visible represents whether or not the sport is visible. |
-| advertised_start_time | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | AdvertisedStartTime is the time the sport is advertised to run. |
-| status | [string](#string) |  | status determines if a sport is open or closed based on advertised_start_time |
+| id | [int64](#int64) |  | ID represents a unique identifier for the event. |
+| home_team | [string](#string) |  | Name of the team playing on home grounds. |
+| away_team | [string](#string) |  | Name of the visitng team. |
+| sport | [string](#string) |  | Name of the sport being played. |
+| location | [string](#string) |  | City where the event is being held. |
+| capacity | [int64](#int64) |  | Capacity of venue the event is being held. |
+| advertised_start_time | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | AdvertisedStartTime is the time the event is advertised to run. |
+| expected_end_time | [google.protobuf.Timestamp](#google-protobuf-Timestamp) |  | ExpectedEndTime is the time the event is expected to end with no overtime. |
+| status | [string](#string) |  | Status determines if a sport is open, in progress, or closed based on start and end times |
 
 
 
@@ -234,8 +236,9 @@ Filter for listing sport events
 
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
-| meeting_ids | [int64](#int64) | repeated |  |
-| visible | [bool](#bool) | optional |  |
+| sport | [string](#string) |  |  |
+| team | [string](#string) |  |  |
+| status | [string](#string) |  |  |
 
 
 

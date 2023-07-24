@@ -35,8 +35,9 @@ message ListEventsResponse {
 
 // Filter for listing sport events
 message ListEventsRequestFilter {
-  repeated int64 meeting_ids = 1;
-  optional bool visible = 2;
+  string sport = 1;
+  string team = 2;
+  string status = 3;
 }
 
 
@@ -57,19 +58,23 @@ message GetEventResponse {
 
 // A sport event resource.
 message Event {
-  // ID represents a unique identifier for the sport.
+  // ID represents a unique identifier for the event.
   int64 id = 1;
-  // MeetingID represents a unique identifier for the sports meeting.
-  int64 meeting_id = 2;
-  // Name is the official name given to the sport.
-  string name = 3;
-  // Number represents the number of the sport.
-  int64 number = 4;
-  // Visible represents whether or not the sport is visible.
-  bool visible = 5;
-  // AdvertisedStartTime is the time the sport is advertised to run.
-  google.protobuf.Timestamp advertised_start_time = 6;
-  // status determines if a sport is open or closed based on advertised_start_time
-  string status = 7;
+  // Name of the team playing on home grounds.
+  string home_team = 2;
+  // Name of the visitng team.
+  string away_team = 3;
+  // Name of the sport being played.
+  string sport = 4;
+  // City where the event is being held.
+  string location = 5;
+  // Capacity of venue the event is being held.
+  int64 capacity = 6;
+  // AdvertisedStartTime is the time the event is advertised to run.
+  google.protobuf.Timestamp advertised_start_time = 7;
+  // ExpectedEndTime is the time the event is expected to end with no overtime.
+  google.protobuf.Timestamp expected_end_time = 8;
+  // Status determines if a sport is open, in progress, or closed based on start and end times
+  string status = 9;
 }
 

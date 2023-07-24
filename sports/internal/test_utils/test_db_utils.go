@@ -13,10 +13,11 @@ type MockDbHelper interface {
 }
 
 type mockSportDb struct {
-	t           *testing.T
-	DB          *sql.DB
-	Mock        sqlmock.Sqlmock
-	ColumnNames []string
+	t               *testing.T
+	DB              *sql.DB
+	Mock            sqlmock.Sqlmock
+	ColumnNames     []string
+	JoinColumnNames []string
 }
 
 func NewMockSportDb(t *testing.T) MockDbHelper {
@@ -32,7 +33,8 @@ func (m *mockSportDb) Init() *mockSportDb {
 
 	m.DB = db
 	m.Mock = mock
-	m.ColumnNames = []string{"id", "meeting_id", "name", "number", "visible", "advertised_start_time"}
+	m.ColumnNames = []string{"id", "team_home_id", "team_away_id", "sport_id", "location_id", "advertised_start_time", "duration"}
+	m.JoinColumnNames = []string{"id", "home_team", "away_team", "sport", "location", "capacity", "advertised_start_time", "duration"}
 
 	m.Mock.MatchExpectationsInOrder(false)
 

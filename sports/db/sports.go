@@ -78,7 +78,7 @@ func (r *sportsRepo) List(filter *sports.ListEventsRequestFilter, order_by strin
 
 	query = getSportQueries()[eventsList]
 
-	query, args = r.applyFilter(query, filter)
+	query, args = r.applyDbFilter(query, filter)
 
 	query = r.applySort(query, order_by)
 
@@ -87,17 +87,25 @@ func (r *sportsRepo) List(filter *sports.ListEventsRequestFilter, order_by strin
 		return nil, err
 	}
 
-	return r.scanEvents(rows)
+	events, err := r.scanEvents(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	events = r.applyDerivedFilter(events, filter)
+
+	return events, err
 }
 
 func (r *sportsRepo) applyGet(query string, id int64) (string, []interface{}) {
 	var args []interface{}
 	args = append(args, id)
-	query += " WHERE id = ?"
+	query += " WHERE event.id = ?"
 	return query, args
 }
 
-func (r *sportsRepo) applyFilter(query string, filter *sports.ListEventsRequestFilter) (string, []interface{}) {
+// Apply filters that apply directly to the SQL database query
+func (r *sportsRepo) applyDbFilter(query string, filter *sports.ListEventsRequestFilter) (string, []interface{}) {
 	var (
 		clauses []string
 		args    []interface{}
@@ -107,18 +115,14 @@ func (r *sportsRepo) applyFilter(query string, filter *sports.ListEventsRequestF
 		return query, args
 	}
 
-	if len(filter.MeetingIds) > 0 {
-		clauses = append(clauses, "meeting_id IN ("+strings.Repeat("?,", len(filter.MeetingIds)-1)+"?)")
-
-		for _, meetingID := range filter.MeetingIds {
-			args = append(args, meetingID)
-		}
+	if len(filter.Sport) > 0 {
+		clauses = append(clauses, "(sport.name LIKE ?)")
+		args = append(args, "%"+filter.Sport+"%")
 	}
 
-	//Only apply visibility filter if it is defined, to avoid default value of false
-	if filter.Visible != nil {
-		clauses = append(clauses, "visible = ?")
-		args = append(args, filter.GetVisible())
+	if len(filter.Team) > 0 {
+		clauses = append(clauses, "(home_team LIKE ? OR away_team LIKE ?)")
+		args = append(args, "%"+filter.Team+"%", "%"+filter.Team+"%")
 	}
 
 	if len(clauses) != 0 {
@@ -126,6 +130,22 @@ func (r *sportsRepo) applyFilter(query string, filter *sports.ListEventsRequestF
 	}
 
 	return query, args
+}
+
+// Apply filters that apply to derived or calculated attribtues
+func (r *sportsRepo) applyDerivedFilter(events []*sports.Event, filter *sports.ListEventsRequestFilter) []*sports.Event {
+	var matchingEvents []*sports.Event
+
+	if filter != nil && len(filter.Status) > 0 {
+		for _, event := range events {
+			if strings.EqualFold(event.Status, filter.Status) {
+				matchingEvents = append(matchingEvents, event)
+			}
+		}
+		events = matchingEvents
+	}
+
+	return events
 }
 
 // If order_by parameter is provided, send through to the SQL query
@@ -193,8 +213,9 @@ func (m *sportsRepo) scanEvents(
 func (m *sportsRepo) scanEvent(rows *sql.Rows, requestTime time.Time) (*sports.Event, error) {
 	var event sports.Event
 	var advertisedStart time.Time
+	var duration int
 
-	if err := rows.Scan(&event.Id, &event.MeetingId, &event.Name, &event.Number, &event.Visible, &advertisedStart); err != nil {
+	if err := rows.Scan(&event.Id, &event.HomeTeam, &event.AwayTeam, &event.Sport, &event.Location, &event.Capacity, &advertisedStart, &duration); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
@@ -202,21 +223,26 @@ func (m *sportsRepo) scanEvent(rows *sql.Rows, requestTime time.Time) (*sports.E
 		return nil, err
 	}
 
-	event.Status = getEventStatus(&advertisedStart, &requestTime)
-
 	ts := timestamppb.New(advertisedStart)
-
 	event.AdvertisedStartTime = ts
+
+	endTime := timestamppb.New(advertisedStart.Add(time.Minute * time.Duration(duration)))
+	event.ExpectedEndTime = endTime
+
+	event.Status = getEventStatus(&event, &requestTime)
 
 	return &event, nil
 }
 
-func getEventStatus(startTime *time.Time, requestTime *time.Time) string {
-	if startTime.Before(*requestTime) {
-		//advertised start time is in the past
+func getEventStatus(event *sports.Event, requestTime *time.Time) string {
+	if event.AdvertisedStartTime.AsTime().After(*requestTime) {
+		//advertised start time is in the future
+		return "OPEN"
+	} else if event.ExpectedEndTime.AsTime().Before(*requestTime) {
+		//expected end time is in the past
 		return "CLOSED"
 	} else {
-		//advertised start time is equal to current time or in the future
-		return "OPEN"
+		//current time is between advertised start time and expected end time
+		return "INPROGRESS"
 	}
 }
