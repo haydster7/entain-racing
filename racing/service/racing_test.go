@@ -61,7 +61,7 @@ func raceResultAssertions(t *testing.T, sampleRaces []*racing.Race, responseRace
 	if !areRacesEqual {
 		t.Error("Returned races do not match expected races")
 		t.Errorf("Expected: %v", sampleRaces)
-		t.Errorf("Got: %v", sampleRaces)
+		t.Errorf("Got: %v", responseRaces)
 	}
 
 	expectationsError := mock.ExpectationsWereMet()
